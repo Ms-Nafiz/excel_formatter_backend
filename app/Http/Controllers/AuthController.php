@@ -11,31 +11,13 @@ use Illuminate\Validation\Rules\Password;
 class AuthController extends Controller
 {
     /**
-     * Register a new user
+     * Public Registration (Disabled - Admin only)
      */
     public function register(Request $request)
     {
-        $fields = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
-            'password' => ['required', 'confirmed', Password::defaults()],
-            'role' => 'nullable|string|in:admin,user,authority',
-        ]);
-
-        $user = User::create([
-            'name' => $fields['name'],
-            'email' => $fields['email'],
-            'password' => Hash::make($fields['password']),
-            'role' => $fields['role'] ?? 'user',
-        ]);
-
-        $token = $user->createToken('auth_token')->plainTextToken;
-
         return response()->json([
-            'message' => 'Registration successful',
-            'user' => $user,
-            'token' => $token,
-        ], 201);
+            'message' => 'Public registration is disabled. Only administrators can add new users.',
+        ], 403);
     }
 
     /**
@@ -176,6 +158,58 @@ class AuthController extends Controller
         return response()->json([
             'message' => "Role for {$targetUser->name} updated to '{$targetUser->role}' successfully!",
             'user' => $targetUser,
+        ], 200);
+    }
+
+    /**
+     * Create a new user (Admin only)
+     */
+    public function createUser(Request $request)
+    {
+        $user = $request->user();
+        if (!$user->isAdmin()) {
+            return response()->json(['message' => 'Unauthorized action.'], 403);
+        }
+
+        $fields = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|string|email|max:255|unique:users,email',
+            'password' => ['required', 'string', 'min:6'],
+            'role' => 'required|string|in:admin,user,authority',
+        ]);
+
+        $newUser = User::create([
+            'name' => trim($fields['name']),
+            'email' => trim($fields['email']),
+            'password' => Hash::make($fields['password']),
+            'role' => $fields['role'] ?? 'user',
+        ]);
+
+        return response()->json([
+            'message' => "User '{$newUser->name}' created successfully!",
+            'user' => $newUser,
+        ], 201);
+    }
+
+    /**
+     * Delete a user (Admin only)
+     */
+    public function deleteUser(Request $request, $id)
+    {
+        $user = $request->user();
+        if (!$user->isAdmin()) {
+            return response()->json(['message' => 'Unauthorized action.'], 403);
+        }
+
+        if ((int)$id === (int)$user->id) {
+            return response()->json(['message' => 'You cannot delete your own admin account.'], 422);
+        }
+
+        $targetUser = User::findOrFail($id);
+        $targetUser->delete();
+
+        return response()->json([
+            'message' => "User '{$targetUser->name}' removed successfully!",
         ], 200);
     }
 }

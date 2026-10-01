@@ -70,7 +70,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/auth/profile', [AuthController::class, 'updateProfile']);
     Route::put('/auth/change-password', [AuthController::class, 'changePassword']);
     Route::get('/auth/users', [AuthController::class, 'getAllUsers']);
+    Route::post('/auth/users', [AuthController::class, 'createUser']);
     Route::put('/auth/users/{id}/role', [AuthController::class, 'updateUserRole']);
+    Route::delete('/auth/users/{id}', [AuthController::class, 'deleteUser']);
 
     // Excel Engine & History & Interactive Editing
     Route::post('/excel/process', [ExcelProcessingController::class, 'process']);
