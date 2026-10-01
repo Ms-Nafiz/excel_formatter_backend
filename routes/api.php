@@ -56,6 +56,25 @@ Route::get('/system/status', function () {
             'message' => 'Database connection failed.'
         ], 500);
     }
+// Safe Live Seeder Route (Seeds Areas, Buildings, Collectors - Excludes users)
+Route::get('/system/seed-locations', function () {
+    try {
+        $seeder = new \Database\Seeders\LocationCollectorSeeder();
+        $seeder->run();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Areas, buildings, and collectors seeded successfully! No user records were created or modified.',
+            'areas_count' => \App\Models\Area::count(),
+            'buildings_count' => \App\Models\Building::count(),
+            'collectors_count' => \App\Models\Collector::count(),
+        ], 200);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Seeding failed: ' . $e->getMessage(),
+        ], 500);
+    }
 });
 
 // Public Auth Routes
