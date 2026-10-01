@@ -368,20 +368,11 @@ class ExcelProcessingController extends Controller
 
         $activeDataMonths = array_values(array_unique(array_merge($uploadedMonths, $dbMonths)));
 
-        $defaultMonths = [
-            'August 2026',
-            'July 2026',
-            'June 2026',
-            'May 2026',
-            'April 2026',
-            'March 2026',
-            'February 2026',
-            'January 2026',
-            'September 2026',
-            'October 2026',
-            'November 2026',
-            'December 2026',
-        ];
+        $defaultMonths = [];
+        $currentDate = now();
+        for ($i = 2; $i >= -14; $i--) {
+            $defaultMonths[] = $currentDate->copy()->addMonths($i)->format('F Y');
+        }
 
         $combinedMonths = array_values(array_unique(array_merge($activeDataMonths, $defaultMonths)));
 
@@ -390,7 +381,7 @@ class ExcelProcessingController extends Controller
             ->latest()
             ->first();
 
-        $currentSelected = $latestFile ? $latestFile->billing_month : ($activeDataMonths[0] ?? 'August 2026');
+        $currentSelected = $latestFile ? $latestFile->billing_month : ($activeDataMonths[0] ?? now()->format('F Y'));
 
         return response()->json([
             'current_month' => $currentSelected,
