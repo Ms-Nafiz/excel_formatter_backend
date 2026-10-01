@@ -56,6 +56,8 @@ Route::get('/system/status', function () {
             'message' => 'Database connection failed.'
         ], 500);
     }
+});
+
 // Safe Live Seeder Route (Seeds Areas, Buildings, Collectors - Excludes users)
 Route::get('/system/seed-locations', function () {
     try {
