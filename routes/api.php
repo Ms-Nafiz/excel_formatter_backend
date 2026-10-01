@@ -13,6 +13,51 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 */
 
+// Public Health & Database Status
+Route::get('/health', function () {
+    try {
+        \Illuminate\Support\Facades\DB::connection()->getPdo();
+        $dbName = \Illuminate\Support\Facades\DB::connection()->getDatabaseName();
+        $userCount = \App\Models\User::count();
+        return response()->json([
+            'status' => 'connected',
+            'database' => $dbName,
+            'users_count' => $userCount,
+            'server_time' => now()->toIso8601String(),
+            'message' => 'Live database connection is active and healthy.'
+        ], 200);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'status' => 'disconnected',
+            'database' => null,
+            'error' => $e->getMessage(),
+            'message' => 'Database connection failed.'
+        ], 500);
+    }
+});
+
+Route::get('/system/status', function () {
+    try {
+        \Illuminate\Support\Facades\DB::connection()->getPdo();
+        $dbName = \Illuminate\Support\Facades\DB::connection()->getDatabaseName();
+        $userCount = \App\Models\User::count();
+        return response()->json([
+            'status' => 'connected',
+            'database' => $dbName,
+            'users_count' => $userCount,
+            'server_time' => now()->toIso8601String(),
+            'message' => 'Live database connection is active and healthy.'
+        ], 200);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'status' => 'disconnected',
+            'database' => null,
+            'error' => $e->getMessage(),
+            'message' => 'Database connection failed.'
+        ], 500);
+    }
+});
+
 // Public Auth Routes
 Route::post('/auth/register', [AuthController::class, 'register']);
 Route::post('/auth/login', [AuthController::class, 'login']);
