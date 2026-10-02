@@ -478,7 +478,8 @@ class ExcelProcessingController extends Controller
                     $adv = (float) $rec->advance;
                     $dues = (float) $rec->previous_dues;
                     $discount = (float) ($rec->discount ?? 0.0);
-                    $actualBill = max(0.0, $rent - $adv - $discount);
+                    $effectiveAdv = $adv + $discount;
+                    $actualBill = max(0.0, $rent - $effectiveAdv);
                     $fiftyPercent = $dues * 0.5;
                     $target = $actualBill + $fiftyPercent;
 
@@ -504,7 +505,7 @@ class ExcelProcessingController extends Controller
                     $targetArr[$collectorName]['count_of_id']++;
                     $targetArr[$collectorName]['sum_of_rent'] += $rent;
                     $targetArr[$collectorName]['sum_of_due'] += $dues;
-                    $targetArr[$collectorName]['sum_of_advnc'] += $adv;
+                    $targetArr[$collectorName]['sum_of_advnc'] += $effectiveAdv;
                     $targetArr[$collectorName]['sum_of_actual_bill'] += $actualBill;
                     $targetArr[$collectorName]['sum_of_50'] += $fiftyPercent;
                     $targetArr[$collectorName]['sum_of_target'] += $target;

@@ -635,7 +635,8 @@ class ExcelFormattingService
                 $collectorName = 'Unassigned / Unmapped';
             }
 
-            $actualBill = max(0.0, $rent - $adv - $discount);
+            $effectiveAdv = $adv + $discount;
+            $actualBill = max(0.0, $rent - $effectiveAdv);
             $fiftyPercent = $dues * 0.5;
             $target = $actualBill + $fiftyPercent;
 
@@ -657,7 +658,7 @@ class ExcelFormattingService
                 $digitalStats[$collectorName]['count_of_id']++;
                 $digitalStats[$collectorName]['sum_of_rent'] += $rent;
                 $digitalStats[$collectorName]['sum_of_due'] += $dues;
-                $digitalStats[$collectorName]['sum_of_advnc'] += $adv;
+                $digitalStats[$collectorName]['sum_of_advnc'] += $effectiveAdv;
                 $digitalStats[$collectorName]['sum_of_actual_bill'] += $actualBill;
                 $digitalStats[$collectorName]['sum_of_50'] += $fiftyPercent;
                 $digitalStats[$collectorName]['sum_of_target'] += $target;
@@ -677,7 +678,7 @@ class ExcelFormattingService
                 $analogStats[$collectorName]['count_of_id']++;
                 $analogStats[$collectorName]['sum_of_rent'] += $rent;
                 $analogStats[$collectorName]['sum_of_due'] += $dues;
-                $analogStats[$collectorName]['sum_of_advnc'] += $adv;
+                $analogStats[$collectorName]['sum_of_advnc'] += $effectiveAdv;
                 $analogStats[$collectorName]['sum_of_actual_bill'] += $actualBill;
                 $analogStats[$collectorName]['sum_of_50'] += $fiftyPercent;
                 $analogStats[$collectorName]['sum_of_target'] += $target;
@@ -1122,7 +1123,8 @@ class ExcelFormattingService
                 $collectorName = 'Unassigned / Unmapped';
             }
 
-            $actualBill = max(0.0, $rent - $adv - $discount);
+            $effectiveAdv = $adv + $discount;
+            $actualBill = max(0.0, $rent - $effectiveAdv);
             $fiftyPercent = $dues * 0.5;
             $target = $actualBill + $fiftyPercent;
 
@@ -1144,7 +1146,7 @@ class ExcelFormattingService
                 $digitalStats[$collectorName]['count_of_id']++;
                 $digitalStats[$collectorName]['sum_of_rent'] += $rent;
                 $digitalStats[$collectorName]['sum_of_due'] += $dues;
-                $digitalStats[$collectorName]['sum_of_advnc'] += $adv;
+                $digitalStats[$collectorName]['sum_of_advnc'] += $effectiveAdv;
                 $digitalStats[$collectorName]['sum_of_actual_bill'] += $actualBill;
                 $digitalStats[$collectorName]['sum_of_50'] += $fiftyPercent;
                 $digitalStats[$collectorName]['sum_of_target'] += $target;
@@ -1164,7 +1166,7 @@ class ExcelFormattingService
                 $analogStats[$collectorName]['count_of_id']++;
                 $analogStats[$collectorName]['sum_of_rent'] += $rent;
                 $analogStats[$collectorName]['sum_of_due'] += $dues;
-                $analogStats[$collectorName]['sum_of_advnc'] += $adv;
+                $analogStats[$collectorName]['sum_of_advnc'] += $effectiveAdv;
                 $analogStats[$collectorName]['sum_of_actual_bill'] += $actualBill;
                 $analogStats[$collectorName]['sum_of_50'] += $fiftyPercent;
                 $analogStats[$collectorName]['sum_of_target'] += $target;
