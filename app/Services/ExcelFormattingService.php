@@ -1771,9 +1771,28 @@ class ExcelFormattingService
                 }
             }
 
+            $advanceVal = (float)$rec->advance;
+            if ($advanceVal == 0.0) {
+                foreach ($rowData as $k => $v) {
+                    $kLower = strtolower(trim((string)$k));
+                    if (Str::contains($kLower, ['total'])) continue;
+                    if (Str::contains($kLower, ['advance', 'adv', 'agrim'])) {
+                        if ($v !== null && $v !== '') {
+                            $parsedAdv = (float) preg_replace('/[^0-9.-]/', '', (string)$v);
+                            if ($parsedAdv > 0) {
+                                $advanceVal = $parsedAdv;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
             $rowData['_db_previous_dues'] = $duesVal;
             $rowData['_db_monthly_rent'] = $rentVal;
             $rowData['_db_discount'] = $discountVal;
+            $rowData['_db_advance'] = $advanceVal;
+            $rowData['_db_actual_bill'] = (float)$rec->actual_bill;
             $rows[] = $rowData;
         }
 
@@ -1819,7 +1838,7 @@ class ExcelFormattingService
                     $dbRec->discount = is_numeric($newVal) ? (float)$newVal : 0.0;
                 } elseif (Str::contains($colKey, ['previous dues', 'prev dues', 'previous_dues'])) {
                     $dbRec->previous_dues = is_numeric($newVal) ? (float)$newVal : 0.0;
-                } elseif (Str::contains($colKey, ['rent', 'salary', 'bill', 'amount', 'price', 'total'])) {
+                } elseif (!Str::contains($colKey, ['total']) && Str::contains($colKey, ['rent', 'salary', 'bill', 'amount', 'price', 'fee', 'monthly rent'])) {
                     $dbRec->monthly_rent = is_numeric($newVal) ? (float)$newVal : 0.0;
                 } elseif (Str::contains($colKey, ['house', 'house_no', 'house no'])) {
                     $dbRec->house_no = trim((string)$newVal);
@@ -2022,6 +2041,15 @@ class ExcelFormattingService
      */
     public function compareTwoMonthsCustomerRecords(string $baseMonth, string $compareMonth, ?int $userId = null): array
     {
+        // Guard: Base Month (Month A) must always be chronologically earlier than Compare Month (Month B)
+        $timeBase = strtotime("1 " . $baseMonth);
+        $timeCompare = strtotime("1 " . $compareMonth);
+        if ($timeBase && $timeCompare && $timeBase > $timeCompare) {
+            $temp = $baseMonth;
+            $baseMonth = $compareMonth;
+            $compareMonth = $temp;
+        }
+
         $baseQuery = CustomerMonthlyBilling::with('processedFile')
             ->where('billing_month', $baseMonth)
             ->where('status', 'Active');
@@ -2224,6 +2252,15 @@ class ExcelFormattingService
 
     public function generateComparisonExcelReport(string $baseMonth, string $compareMonth, array $data, string $outputPath): string
     {
+        // Guard: Base Month (Month A) must always be chronologically earlier than Compare Month (Month B)
+        $timeBase = strtotime("1 " . $baseMonth);
+        $timeCompare = strtotime("1 " . $compareMonth);
+        if ($timeBase && $timeCompare && $timeBase > $timeCompare) {
+            $temp = $baseMonth;
+            $baseMonth = $compareMonth;
+            $compareMonth = $temp;
+        }
+
         $spreadsheet = new Spreadsheet();
         $spreadsheet->getDefaultStyle()->getFont()->setName('Noto Sans Bengali');
 

@@ -972,6 +972,7 @@ class ExcelProcessingController extends Controller
         $filterBy = trim((string)$request->input('filter_by', 'update_month')); // 'update_month' | 'billing_month' | 'all'
         $field = trim((string)$request->input('field'));
         $search = trim((string)$request->input('search'));
+        $latestOnly = $request->has('latest_only') ? $request->boolean('latest_only') : true;
         $perPage = (int)$request->input('per_page', 25);
         if ($perPage <= 0 || $perPage > 200) {
             $perPage = 25;
@@ -1011,6 +1012,37 @@ class ExcelProcessingController extends Controller
             });
         }
 
+        // Filter to only the most recent / latest change per customer ID & field name
+        if ($latestOnly) {
+            $subQuery = \DB::table('customer_record_histories as h_sub')
+                ->selectRaw('MAX(h_sub.id) as max_id');
+
+            if (!empty($month) && $month !== 'all') {
+                if ($filterBy === 'billing_month') {
+                    $subQuery->whereExists(function ($q) use ($month) {
+                        $q->select(\DB::raw(1))
+                          ->from('customer_records as cr_sub')
+                          ->whereColumn('cr_sub.id', 'h_sub.customer_record_id')
+                          ->where('cr_sub.billing_month', $month);
+                    });
+                } else {
+                    if (preg_match('/^\d{4}-\d{2}$/', $month)) {
+                        $subQuery->whereRaw("DATE_FORMAT(h_sub.created_at, '%Y-%m') = ?", [$month]);
+                    } else {
+                        $subQuery->whereRaw("DATE_FORMAT(h_sub.created_at, '%M %Y') = ?", [$month]);
+                    }
+                }
+            }
+
+            if (!empty($field) && $field !== 'all') {
+                $subQuery->where('h_sub.field_name', $field);
+            }
+
+            $subQuery->groupBy(\DB::raw('COALESCE(h_sub.customer_id, h_sub.customer_record_id)'), 'h_sub.field_name');
+
+            $query->whereIn('customer_record_histories.id', $subQuery);
+        }
+
         // Stats calculation
         $totalUpdates = (clone $query)->count();
         $uniqueCustomers = (clone $query)->distinct('customer_id')->count('customer_id');
@@ -1029,12 +1061,44 @@ class ExcelProcessingController extends Controller
             ->take(5)
             ->get();
 
+        // Helper to attach edit counts and initial old value if latestOnly is active
+        $attachEditStats = function ($items) use ($latestOnly) {
+            if (!$latestOnly || empty($items)) {
+                return;
+            }
+            $coll = collect($items);
+            $keys = $coll->map(fn($it) => ($it->customer_id ?: $it->customer_record_id) . '___' . $it->field_name)->unique()->values();
+
+            if ($keys->isNotEmpty()) {
+                $pairStats = \DB::table('customer_record_histories as hs')
+                    ->selectRaw("COALESCE(hs.customer_id, hs.customer_record_id) as cust_key, hs.field_name, COUNT(*) as edit_count, MIN(hs.id) as min_id")
+                    ->whereIn(\DB::raw("CONCAT(COALESCE(hs.customer_id, hs.customer_record_id), '___', hs.field_name)"), $keys)
+                    ->groupBy(\DB::raw('COALESCE(hs.customer_id, hs.customer_record_id)'), 'hs.field_name')
+                    ->get();
+
+                $minIds = $pairStats->pluck('min_id')->unique()->filter()->values()->toArray();
+                $minRecords = !empty($minIds) ? \App\Models\CustomerRecordHistory::whereIn('id', $minIds)->get()->keyBy('id') : collect();
+                $statMap = $pairStats->keyBy(fn($s) => $s->cust_key . '___' . $s->field_name);
+
+                foreach ($items as $item) {
+                    $key = ($item->customer_id ?: $item->customer_record_id) . '___' . $item->field_name;
+                    $stat = $statMap->get($key);
+                    $item->edit_count = $stat ? (int)$stat->edit_count : 1;
+                    $minRec = $stat && isset($minRecords[$stat->min_id]) ? $minRecords[$stat->min_id] : null;
+                    $item->initial_old_value = $minRec ? $minRec->old_value : $item->old_value;
+                }
+            }
+        };
+
         // If all=true (for export or complete client-side view)
         if ($request->boolean('all')) {
             $logs = $query->orderBy('created_at', 'desc')->get();
+            $attachEditStats($logs);
+
             return response()->json([
                 'logs' => $logs,
                 'total' => $totalUpdates,
+                'latest_only' => $latestOnly,
                 'stats' => [
                     'total_updates' => $totalUpdates,
                     'unique_customers' => $uniqueCustomers,
@@ -1045,6 +1109,7 @@ class ExcelProcessingController extends Controller
         }
 
         $paginated = $query->orderBy('created_at', 'desc')->paginate($perPage);
+        $attachEditStats($paginated->items());
 
         return response()->json([
             'logs' => $paginated->items(),
@@ -1052,6 +1117,7 @@ class ExcelProcessingController extends Controller
             'last_page' => $paginated->lastPage(),
             'per_page' => $paginated->perPage(),
             'total' => $paginated->total(),
+            'latest_only' => $latestOnly,
             'stats' => [
                 'total_updates' => $totalUpdates,
                 'unique_customers' => $uniqueCustomers,
@@ -1070,6 +1136,7 @@ class ExcelProcessingController extends Controller
         $filterBy = trim((string)$request->input('filter_by', 'update_month'));
         $field = trim((string)$request->input('field'));
         $search = trim((string)$request->input('search'));
+        $latestOnly = $request->has('latest_only') ? $request->boolean('latest_only') : true;
 
         $query = \App\Models\CustomerRecordHistory::with(['customerRecord', 'processedFile']);
 
@@ -1100,6 +1167,36 @@ class ExcelProcessingController extends Controller
                   ->orWhere('new_value', 'like', "%{$search}%")
                   ->orWhere('edited_by', 'like', "%{$search}%");
             });
+        }
+
+        if ($latestOnly) {
+            $subQuery = \DB::table('customer_record_histories as h_sub')
+                ->selectRaw('MAX(h_sub.id) as max_id');
+
+            if (!empty($month) && $month !== 'all') {
+                if ($filterBy === 'billing_month') {
+                    $subQuery->whereExists(function ($q) use ($month) {
+                        $q->select(\DB::raw(1))
+                          ->from('customer_records as cr_sub')
+                          ->whereColumn('cr_sub.id', 'h_sub.customer_record_id')
+                          ->where('cr_sub.billing_month', $month);
+                    });
+                } else {
+                    if (preg_match('/^\d{4}-\d{2}$/', $month)) {
+                        $subQuery->whereRaw("DATE_FORMAT(h_sub.created_at, '%Y-%m') = ?", [$month]);
+                    } else {
+                        $subQuery->whereRaw("DATE_FORMAT(h_sub.created_at, '%M %Y') = ?", [$month]);
+                    }
+                }
+            }
+
+            if (!empty($field) && $field !== 'all') {
+                $subQuery->where('h_sub.field_name', $field);
+            }
+
+            $subQuery->groupBy(\DB::raw('COALESCE(h_sub.customer_id, h_sub.customer_record_id)'), 'h_sub.field_name');
+
+            $query->whereIn('customer_record_histories.id', $subQuery);
         }
 
         $logs = $query->orderBy('created_at', 'desc')->get();
@@ -1205,6 +1302,15 @@ class ExcelProcessingController extends Controller
             ], 422);
         }
 
+        // Ensure Base Month (Month A) is always chronologically earlier than Compare Month (Month B)
+        $timeBase = strtotime("1 " . $baseMonth);
+        $timeCompare = strtotime("1 " . $compareMonth);
+        if ($timeBase && $timeCompare && $timeBase > $timeCompare) {
+            $temp = $baseMonth;
+            $baseMonth = $compareMonth;
+            $compareMonth = $temp;
+        }
+
         $data = $this->formattingService->compareTwoMonthsCustomerRecords(
             $baseMonth, 
             $compareMonth, 
@@ -1228,6 +1334,15 @@ class ExcelProcessingController extends Controller
 
         if (empty($baseMonth) || empty($compareMonth)) {
             return response()->json(['message' => 'Both base_month and compare_month are required.'], 422);
+        }
+
+        // Ensure Base Month (Month A) is always chronologically earlier than Compare Month (Month B)
+        $timeBase = strtotime("1 " . $baseMonth);
+        $timeCompare = strtotime("1 " . $compareMonth);
+        if ($timeBase && $timeCompare && $timeBase > $timeCompare) {
+            $temp = $baseMonth;
+            $baseMonth = $compareMonth;
+            $compareMonth = $temp;
         }
 
         $data = $this->formattingService->compareTwoMonthsCustomerRecords(
