@@ -109,13 +109,19 @@ class ExcelFormattingService
                     $hf = $f;
                 }
 
+                $a = trim($parsed['area_name'] ?? '');
+
                 $addCombined = '';
                 if (!empty($hf) && !empty($b)) {
                     $addCombined = "{$hf}, {$b}";
-                } elseif (!empty($hf)) {
-                    $addCombined = $hf;
                 } elseif (!empty($b)) {
                     $addCombined = $b;
+                } elseif (!empty($hf) && !empty($a)) {
+                    $addCombined = "{$hf}, {$a}";
+                } elseif (!empty($a)) {
+                    $addCombined = $a;
+                } elseif (!empty($hf)) {
+                    $addCombined = $hf;
                 }
 
                 $parsed['add_combined'] = $addCombined;
@@ -2200,6 +2206,30 @@ class ExcelFormattingService
             }
         }
 
+        $bldg = trim((string)$rec->building_name);
+        $area = trim((string)$rec->area_name);
+        $hasBldg = !empty($bldg) && strcasecmp($bldg, 'N/A') !== 0;
+        $hasArea = !empty($area) && strcasecmp($area, 'N/A') !== 0;
+
+        $rawAdd = trim((string)$rec->add_combined);
+        $hasRawAdd = !empty($rawAdd) && strcasecmp($rawAdd, 'N/A') !== 0;
+
+        if ($hasBldg) {
+            if ($hasRawAdd) {
+                $address = (stripos($rawAdd, $bldg) !== false) ? $rawAdd : "{$rawAdd}, {$bldg}";
+            } else {
+                $address = $bldg;
+            }
+        } elseif ($hasArea) {
+            if ($hasRawAdd) {
+                $address = (stripos($rawAdd, $area) !== false) ? $rawAdd : "{$rawAdd}, {$area}";
+            } else {
+                $address = $area;
+            }
+        } else {
+            $address = $hasRawAdd ? $rawAdd : 'N/A';
+        }
+
         return [
             'id' => $rec->id,
             'customer_id' => $custId ?: ('ID #' . $rec->id),
@@ -2211,7 +2241,7 @@ class ExcelFormattingService
             'building_name' => $rec->building_name ?: 'N/A',
             'house_no' => $rec->house_no ?: '',
             'flat_no' => $rec->flat_no ?: '',
-            'add_combined' => $rec->add_combined ?: 'N/A',
+            'add_combined' => $address,
             'monthly_rent' => (float)$rec->monthly_rent,
             'previous_dues' => (float)$rec->previous_dues,
             'billing_month' => $rec->billing_month,
