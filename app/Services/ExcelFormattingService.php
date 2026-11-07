@@ -1699,6 +1699,21 @@ class ExcelFormattingService
         $sampleRaw = $dbRecords->first()->raw_data_json;
         $headers = is_array($sampleRaw) ? array_keys($sampleRaw) : array_keys(json_decode($sampleRaw, true) ?? []);
 
+        // Load reference areas and buildings for address cleaning
+        $dbAreaNames = \App\Models\Area::pluck('name')->toArray();
+        $dbBuildingNames = \App\Models\Building::pluck('name')->toArray();
+
+        $rowAreas = [];
+        $rowBuildings = [];
+        foreach ($dbRecords as $r) {
+            if (!empty($r->area_name) && $r->area_name !== 'N/A') $rowAreas[] = trim($r->area_name);
+            if (!empty($r->building_name) && $r->building_name !== 'N/A') $rowBuildings[] = trim($r->building_name);
+        }
+        $allKnownAreas = array_values(array_unique(array_filter(array_merge($dbAreaNames, $rowAreas))));
+        $allKnownBuildings = array_values(array_unique(array_filter(array_merge($dbBuildingNames, $rowBuildings))));
+        usort($allKnownAreas, fn($a, $b) => strlen($b) - strlen($a));
+        usort($allKnownBuildings, fn($a, $b) => strlen($b) - strlen($a));
+
         $rows = [];
         foreach ($dbRecords as $rec) {
             $rowData = $rec->raw_data_json;
@@ -1708,6 +1723,188 @@ class ExcelFormattingService
             $rowData['_row_index'] = $rec->row_index;
             $rowData['Category'] = $rec->category ?? 'Army';
             $rowData['Status'] = $rec->status;
+            if (!empty($rec->building_name)) {
+                $rowData['_db_building_name'] = $rec->building_name;
+                if (empty($rowData['Building Name'])) {
+                    $rowData['Building Name'] = $rec->building_name;
+                }
+            }
+            if (!empty($rec->area_name)) {
+                $rowData['_db_area_name'] = $rec->area_name;
+                if (empty($rowData['Area Name'])) {
+                    $rowData['Area Name'] = $rec->area_name;
+                }
+            }
+            if (!empty($rec->house_no)) {
+                $rowData['_db_house_no'] = $rec->house_no;
+            }
+            if (!empty($rec->flat_no)) {
+                $rowData['_db_flat_no'] = $rec->flat_no;
+            }
+
+            // Clean address resolution:
+            // Format: house-flat, (building name if building exists). If no building, just house-flat.
+            // Never include area name inside the address!
+            $areaVal = trim((string)($rec->area_name ?? ($rowData['Area Name'] ?? '')));
+
+            $bldgCandidates = [
+                $rec->building_name ?? '',
+                $rowData['Building Name'] ?? '',
+                $rowData['Building'] ?? '',
+                $rowData['House/Building'] ?? '',
+                $rowData['House Name'] ?? '',
+            ];
+            $bldgVal = '';
+            foreach ($bldgCandidates as $c) {
+                $sVal = trim((string)$c);
+                if ($sVal && strtolower($sVal) !== 'n/a' && $sVal !== '-' && $sVal !== 'null' && $sVal !== 'undefined') {
+                    $bldgVal = $sVal;
+                    break;
+                }
+            }
+
+            $rawAdd = trim((string)($rec->add_combined ?? ($rowData['Add Name'] ?? ($rowData['Add'] ?? ($rowData['Address'] ?? '')))));
+            if (strtolower($rawAdd) === 'n/a' || $rawAdd === '-') $rawAdd = '';
+
+            if (!$bldgVal && !empty($allKnownBuildings)) {
+                $searchStr = $rawAdd . ' ' . ($rowData['Address'] ?? '');
+                foreach ($allKnownBuildings as $b) {
+                    if ($b && stripos($searchStr, $b) !== false) {
+                        $bldgVal = $b;
+                        break;
+                    }
+                }
+            }
+
+            $hVal = trim((string)($rec->house_no ?? ($rowData['House No'] ?? '')));
+            if (strtolower($hVal) === 'n/a' || $hVal === '-' || $hVal === 'null') $hVal = '';
+            $fVal = trim((string)($rec->flat_no ?? ($rowData['Flat No'] ?? '')));
+            if (strtolower($fVal) === 'n/a' || $fVal === '-' || $fVal === 'null') $fVal = '';
+
+            if (!$bldgVal && $hVal && preg_match('/(?:building|buliding|qtr|nibash|complex|mess|tower|villa|vila|bhaban|bhobon|bari|branch|agrajatra|agrodhara|agrojatra)/i', $hVal)) {
+                $bldgVal = $hVal;
+            }
+
+            // If bldgVal equals any known area name, it is an area misclassified as building
+            if ($bldgVal) {
+                foreach ($allKnownAreas as $a) {
+                    if (strcasecmp($bldgVal, $a) === 0) {
+                        $bldgVal = '';
+                        break;
+                    }
+                }
+            }
+
+            // Strip area names from bldgVal if any
+            if ($bldgVal) {
+                foreach ($allKnownAreas as $a) {
+                    if (!$a || strlen($a) < 2) continue;
+                    $esc = preg_quote($a, '/');
+                    $bldgVal = preg_replace("/(?:\s*[,|\-\/]?\s*\b{$esc}\b\s*|\s*\b{$esc}\b\s*[,|\-\/]?)/i", ' ', $bldgVal);
+                }
+                $bldgVal = trim(preg_replace('/\s+/', ' ', $bldgVal));
+                $bldgVal = trim($bldgVal, ",|-/ \t\n\r\0\x0B");
+                if (!$bldgVal || strtolower($bldgVal) === 'n/a') {
+                    $bldgVal = '';
+                }
+            }
+
+            // Clean house and flat: remove area names if present
+            if ($hVal) {
+                foreach ($allKnownAreas as $a) {
+                    if (strcasecmp($hVal, $a) === 0) {
+                        $hVal = '';
+                        break;
+                    }
+                    if (!$a || strlen($a) < 2) continue;
+                    $esc = preg_quote($a, '/');
+                    $hVal = preg_replace("/(?:\s*[,|\-\/]?\s*\b{$esc}\b\s*|\s*\b{$esc}\b\s*[,|\-\/]?)/i", ' ', $hVal);
+                    $hVal = preg_replace("/\b{$esc}(?=[0-9A-Za-z])/i", '', $hVal);
+                }
+                $hVal = trim(preg_replace('/\s+/', ' ', $hVal));
+                $hVal = trim($hVal, ",|-/ \t\n\r\0\x0B");
+            }
+            if ($fVal) {
+                foreach ($allKnownAreas as $a) {
+                    if (strcasecmp($fVal, $a) === 0) {
+                        $fVal = '';
+                        break;
+                    }
+                    if (!$a || strlen($a) < 2) continue;
+                    $esc = preg_quote($a, '/');
+                    $fVal = preg_replace("/(?:\s*[,|\-\/]?\s*\b{$esc}\b\s*|\s*\b{$esc}\b\s*[,|\-\/]?)/i", ' ', $fVal);
+                    $fVal = preg_replace("/\b{$esc}(?=[0-9A-Za-z])/i", '', $fVal);
+                }
+                $fVal = trim(preg_replace('/\s+/', ' ', $fVal));
+                $fVal = trim($fVal, ",|-/ \t\n\r\0\x0B");
+            }
+
+            // Construct house-flat ($hf)
+            $hf = '';
+            if (!empty($hVal) && !empty($fVal)) {
+                if (strcasecmp($hVal, $fVal) === 0) {
+                    $hf = $hVal;
+                } else {
+                    $hf = "{$hVal}-{$fVal}";
+                }
+            } elseif (!empty($hVal)) {
+                $hf = $hVal;
+            } elseif (!empty($fVal)) {
+                $hf = $fVal;
+            }
+
+            // Format address:
+            // When building is present: house-flat, building (or house-flat if building is already inside)
+            // When building is not present: house-flat
+            $cleanAdd = '';
+            if (!empty($bldgVal)) {
+                $rowData['Building Name'] = $bldgVal;
+                $rowData['_db_building_name'] = $bldgVal;
+                if (!empty($hf)) {
+                    if (strcasecmp($hf, $bldgVal) === 0) {
+                        $cleanAdd = $bldgVal;
+                    } elseif (stripos($hf, $bldgVal) !== false) {
+                        $cleanAdd = $hf;
+                    } elseif (strcasecmp($hVal, $bldgVal) === 0 && !empty($fVal)) {
+                        $cleanAdd = "{$fVal}, {$bldgVal}";
+                    } else {
+                        $cleanAdd = "{$hf}, {$bldgVal}";
+                    }
+                } else {
+                    $cleanAdd = $bldgVal;
+                }
+            } else {
+                if (!empty($hf)) {
+                    $cleanAdd = $hf;
+                } else {
+                    $cleaned = $rawAdd;
+                    foreach ($allKnownAreas as $a) {
+                        if (!$a || strlen($a) < 2) continue;
+                        $esc = preg_quote($a, '/');
+                        $cleaned = preg_replace("/(?:\s*[,|\-\/]?\s*\b{$esc}\b\s*|\s*\b{$esc}\b\s*[,|\-\/]?)/i", ' ', $cleaned);
+                    }
+                    $cleaned = trim(preg_replace('/\s+/', ' ', $cleaned));
+                    $cleaned = trim($cleaned, ",|-/ \t\n\r\0\x0B");
+                    $cleanAdd = $cleaned;
+                }
+            }
+
+            // Final safety stripping for area names from cleanAdd
+            foreach ($allKnownAreas as $a) {
+                if (!$a || strlen($a) < 2) continue;
+                $esc = preg_quote($a, '/');
+                $cleanAdd = preg_replace("/(?:\s*[,|\-\/]?\s*\b{$esc}\b\s*|\s*\b{$esc}\b\s*[,|\-\/]?)/i", ' ', $cleanAdd);
+            }
+            $cleanAdd = trim(preg_replace('/\s+/', ' ', $cleanAdd));
+            $cleanAdd = trim($cleanAdd, ",|-/ \t\n\r\0\x0B");
+
+            if (!$cleanAdd || strtolower($cleanAdd) === 'n/a' || ($areaVal && strtolower($cleanAdd) === strtolower($areaVal))) {
+                $cleanAdd = '—';
+            }
+
+            $rowData['Add'] = $cleanAdd;
+            $rowData['Add Name'] = $cleanAdd;
+            $rowData['_db_add_combined'] = $cleanAdd;
 
             $duesVal = (float)$rec->previous_dues;
             if ($duesVal == 0.0) {
@@ -2215,11 +2412,7 @@ class ExcelFormattingService
         $hasRawAdd = !empty($rawAdd) && strcasecmp($rawAdd, 'N/A') !== 0;
 
         if ($hasBldg) {
-            if ($hasRawAdd) {
-                $address = (stripos($rawAdd, $bldg) !== false) ? $rawAdd : "{$rawAdd}, {$bldg}";
-            } else {
-                $address = $bldg;
-            }
+            $address = $bldg;
         } elseif ($hasArea) {
             if ($hasRawAdd) {
                 $address = (stripos($rawAdd, $area) !== false) ? $rawAdd : "{$rawAdd}, {$area}";
@@ -2696,11 +2889,12 @@ class ExcelFormattingService
         }
 
         // Re-construct add_combined if address components are updated
+        $hasBldg = !empty($model->building_name) && strcasecmp($model->building_name, 'N/A') !== 0;
         $addrParts = array_filter([
             !empty($model->house_no) ? "House No # " . $model->house_no : '',
             !empty($model->flat_no) ? "Flat No # " . $model->flat_no : '',
             $model->building_name,
-            $model->area_name
+            !$hasBldg ? $model->area_name : ''
         ]);
         if (!empty($addrParts)) {
             $model->add_combined = implode(', ', $addrParts);
