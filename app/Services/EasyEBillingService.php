@@ -540,11 +540,38 @@ class EasyEBillingService
                 $syncSuccess = !empty($billRes['success']);
                 $syncMessage = $billRes['message'] ?? ($syncSuccess ? "Discount updated to {$newVal}" : "Failed to update discount.");
             }
-            // Previous Dues
-            elseif (str_contains($fLower, 'due')) {
-                $billRes = $this->updateCustomerBill($knownPk, ['due' => (float)$newVal], $customerId);
+            // Previous Dues (EasyEBilling dues is non-editable; offset via discount as instructed)
+            elseif (str_contains($fLower, 'due') || str_contains($fLower, 'baki') || str_contains($fLower, 'bokea')) {
+                $newValFloat = (float)preg_replace('/[^0-9.-]/', '', (string)$newVal);
+                $oldValFloat = (float)preg_replace('/[^0-9.-]/', '', (string)$history->old_value);
+
+                // If old value is missing or 0 in history log, fall back to customer record or latest monthly billing
+                if ($oldValFloat <= 0) {
+                    if ($history->customerRecord) {
+                        $oldValFloat = (float)($history->customerRecord->previous_dues ?? 0);
+                    }
+                    if ($oldValFloat <= 0 && !empty($customerId)) {
+                        $localMonthly = \App\Models\CustomerMonthlyBilling::where('customer_id', $customerId)->latest()->first();
+                        if ($localMonthly && (float)$localMonthly->previous_dues > 0) {
+                            $oldValFloat = (float)$localMonthly->previous_dues;
+                        }
+                    }
+                }
+
+                // If new dues == 0, apply old dues as discount. If new dues > 0, apply new dues as discount.
+                if ($newValFloat <= 0) {
+                    $targetDiscount = max(0.0, $oldValFloat);
+                    $ruleText = "New dues is 0: applied old dues of ৳" . number_format($oldValFloat, 2) . " as discount";
+                } else {
+                    $targetDiscount = max(0.0, $newValFloat);
+                    $ruleText = "New dues is > 0: applied ৳" . number_format($newValFloat, 2) . " as discount";
+                }
+
+                $billRes = $this->updateCustomerBill($knownPk, ['discount' => $targetDiscount], $customerId);
                 $syncSuccess = !empty($billRes['success']);
-                $syncMessage = $billRes['message'] ?? ($syncSuccess ? "Dues updated to {$newVal}" : "Failed to update dues.");
+                $syncMessage = $syncSuccess 
+                    ? "Dues synced as Discount: {$ruleText} on EasyEBilling." 
+                    : ($billRes['message'] ?? "Failed to update discount on EasyEBilling.");
             }
             // Advance
             elseif (str_contains($fLower, 'advance')) {

@@ -290,6 +290,7 @@ class EasyEBillingController extends Controller
 
         $customerId = trim((string)$request->input('customer_id'));
         $changes = $request->input('changes');
+        $oldValues = $request->input('old_values', []);
         $knownPk = $request->input('pk');
 
         if (!$knownPk) {
@@ -300,10 +301,13 @@ class EasyEBillingController extends Controller
         $hasError = false;
 
         foreach ($changes as $key => $val) {
+            $oldVal = isset($oldValues[$key]) ? (string)$oldValues[$key] : null;
+
             // Create a pseudo log to reuse the proven mapping logic
             $tempLog = new CustomerRecordHistory([
                 'customer_id' => $customerId,
                 'field_name' => $key,
+                'old_value' => $oldVal,
                 'new_value' => (string)$val,
                 'billing_pk' => $knownPk,
             ]);
