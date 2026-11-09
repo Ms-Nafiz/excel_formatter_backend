@@ -2253,7 +2253,7 @@ class ExcelFormattingService
             $compareMonth = $temp;
         }
 
-        $baseQuery = CustomerMonthlyBilling::with('processedFile')
+        $baseQuery = CustomerMonthlyBilling::with(['processedFile', 'customer'])
             ->where('billing_month', $baseMonth)
             ->where('status', 'Active');
         if ($userId) {
@@ -2263,7 +2263,7 @@ class ExcelFormattingService
         }
         $baseRecords = $baseQuery->get();
 
-        $compareQuery = CustomerMonthlyBilling::with('processedFile')
+        $compareQuery = CustomerMonthlyBilling::with(['processedFile', 'customer'])
             ->where('billing_month', $compareMonth)
             ->where('status', 'Active');
         if ($userId) {
@@ -2403,24 +2403,102 @@ class ExcelFormattingService
             }
         }
 
-        $bldg = trim((string)$rec->building_name);
-        $area = trim((string)$rec->area_name);
-        $hasBldg = !empty($bldg) && strcasecmp($bldg, 'N/A') !== 0;
-        $hasArea = !empty($area) && strcasecmp($area, 'N/A') !== 0;
+        $cust = $rec->customer;
 
-        $rawAdd = trim((string)$rec->add_combined);
-        $hasRawAdd = !empty($rawAdd) && strcasecmp($rawAdd, 'N/A') !== 0;
+        $hVal = trim((string)($rec->house_no ?: ($cust?->house_no ?: ($raw['House No'] ?? ($raw['house_no'] ?? ($raw['House'] ?? ($raw['_db_house_no'] ?? '')))))));
+        if (strcasecmp($hVal, 'n/a') === 0 || $hVal === '-' || strcasecmp($hVal, 'null') === 0 || preg_match('/^[.\-,\s_]+$/', $hVal)) {
+            $hVal = '';
+        }
 
-        if ($hasBldg) {
-            $address = $bldg;
-        } elseif ($hasArea) {
-            if ($hasRawAdd) {
-                $address = (stripos($rawAdd, $area) !== false) ? $rawAdd : "{$rawAdd}, {$area}";
-            } else {
-                $address = $area;
+        $fVal = trim((string)($rec->flat_no ?: ($cust?->flat_no ?: ($raw['Flat No'] ?? ($raw['flat_no'] ?? ($raw['Flat'] ?? ($raw['_db_flat_no'] ?? '')))))));
+        if (strcasecmp($fVal, 'n/a') === 0 || $fVal === '-' || strcasecmp($fVal, 'null') === 0 || preg_match('/^[.\-,\s_]+$/', $fVal)) {
+            $fVal = '';
+        }
+
+        $bldg = trim((string)($rec->building_name ?: ($cust?->building_name ?: ($raw['Building Name'] ?? ($raw['building_name'] ?? ($raw['Building'] ?? ($raw['_db_building_name'] ?? '')))))));
+        if (strcasecmp($bldg, 'n/a') === 0 || $bldg === '-' || strcasecmp($bldg, 'null') === 0) {
+            $bldg = '';
+        }
+
+        $area = trim((string)($rec->area_name ?: ($cust?->area_name ?: ($raw['Area Name'] ?? ($raw['area_name'] ?? ($raw['Area'] ?? ($raw['_db_area_name'] ?? '')))))));
+        if (strcasecmp($area, 'n/a') === 0 || $area === '-' || strcasecmp($area, 'null') === 0) {
+            $area = '';
+        }
+
+        $rawAdd = trim((string)($rec->add_combined ?: ($cust?->add_combined ?: ($raw['Add Name'] ?? ($raw['Add'] ?? ($raw['add_combined'] ?? ($raw['Address'] ?? ($raw['_db_add_combined'] ?? ''))))))));
+        if (strcasecmp($rawAdd, 'n/a') === 0 || $rawAdd === '-' || strcasecmp($rawAdd, 'null') === 0) {
+            $rawAdd = '';
+        }
+
+        // Construct house-flat ($hf)
+        $hf = '';
+        if (!empty($hVal) && !empty($fVal)) {
+            $hf = (strcasecmp($hVal, $fVal) === 0) ? $hVal : "{$hVal}-{$fVal}";
+        } elseif (!empty($hVal)) {
+            $hf = $hVal;
+        } elseif (!empty($fVal)) {
+            $hf = $fVal;
+        }
+
+        // Check if rawAdd already contains the full address with house/flat and building/area
+        $address = '';
+        if (!empty($rawAdd)) {
+            $hasH = empty($hVal) || stripos($rawAdd, $hVal) !== false;
+            $hasF = empty($fVal) || stripos($rawAdd, $fVal) !== false;
+            $hasB = empty($bldg) || stripos($rawAdd, $bldg) !== false;
+            if ($hasH && $hasF && $hasB) {
+                $address = $rawAdd;
             }
-        } else {
-            $address = $hasRawAdd ? $rawAdd : 'N/A';
+        }
+
+        if (empty($address)) {
+            if (!empty($hf)) {
+                if (!empty($bldg)) {
+                    if (strcasecmp($hf, $bldg) === 0) {
+                        $address = $bldg;
+                    } elseif (stripos($hf, $bldg) !== false) {
+                        $address = $hf;
+                    } elseif (strcasecmp($hVal, $bldg) === 0 && !empty($fVal)) {
+                        $address = "{$fVal}, {$bldg}";
+                    } else {
+                        $address = "{$hf}, {$bldg}";
+                    }
+                } elseif (!empty($area)) {
+                    if (stripos($hf, $area) !== false) {
+                        $address = $hf;
+                    } else {
+                        $address = "{$hf}, {$area}";
+                    }
+                } else {
+                    $address = $hf;
+                }
+            } elseif (!empty($bldg)) {
+                if (!empty($rawAdd)) {
+                    if (strcasecmp($rawAdd, $bldg) === 0) {
+                        $address = $bldg;
+                    } elseif (stripos($rawAdd, $bldg) !== false) {
+                        $address = $rawAdd;
+                    } else {
+                        $address = "{$rawAdd}, {$bldg}";
+                    }
+                } else {
+                    $address = $bldg;
+                }
+            } elseif (!empty($area)) {
+                if (!empty($rawAdd)) {
+                    if (strcasecmp($rawAdd, $area) === 0) {
+                        $address = $area;
+                    } elseif (stripos($rawAdd, $area) !== false) {
+                        $address = $rawAdd;
+                    } else {
+                        $address = "{$rawAdd}, {$area}";
+                    }
+                } else {
+                    $address = $area;
+                }
+            } else {
+                $address = !empty($rawAdd) ? $rawAdd : 'N/A';
+            }
         }
 
         return [
@@ -2430,10 +2508,10 @@ class ExcelFormattingService
             'customer_type' => $rec->customer_type ?: 'Analog',
             'category' => $rec->category ?: 'Army',
             'collector_name' => $rec->collector_name ?: 'Unassigned',
-            'area_name' => $rec->area_name ?: 'N/A',
-            'building_name' => $rec->building_name ?: 'N/A',
-            'house_no' => $rec->house_no ?: '',
-            'flat_no' => $rec->flat_no ?: '',
+            'area_name' => $area ?: ($rec->area_name ?: 'N/A'),
+            'building_name' => $bldg ?: ($rec->building_name ?: 'N/A'),
+            'house_no' => $hVal,
+            'flat_no' => $fVal,
             'add_combined' => $address,
             'monthly_rent' => (float)$rec->monthly_rent,
             'previous_dues' => (float)$rec->previous_dues,
@@ -2884,6 +2962,8 @@ class ExcelFormattingService
                     'old_value' => $oldVal,
                     'new_value' => $newVal,
                     'edited_by' => $userName,
+                    'billing_sync_status' => 'pending',
+                    'billing_pk' => $model->billing_pk ?? null,
                 ]);
             }
         }

@@ -14,6 +14,7 @@ class CustomerMonthlyBilling extends Model
         'master_customer_id',
         'processed_file_id',
         'customer_id',
+        'billing_pk',
         'billing_month',
         'row_index',
         'collector_name',

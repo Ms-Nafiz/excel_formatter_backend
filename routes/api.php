@@ -3,6 +3,7 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CollectorManagementController;
 use App\Http\Controllers\CustomerCollectionController;
+use App\Http\Controllers\EasyEBillingController;
 use App\Http\Controllers\ExcelProcessingController;
 use App\Http\Controllers\LocationManagementController;
 use Illuminate\Support\Facades\Route;
@@ -155,4 +156,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/collections/export', [CustomerCollectionController::class, 'export']);
     Route::get('/collections/achievement', [CustomerCollectionController::class, 'getAchievementReport']);
     Route::get('/collections/export-achievement', [CustomerCollectionController::class, 'exportAchievementReport']);
+
+    // EasyEBilling Integration & Update Audit Synchronization
+    Route::get('/billing/status', [EasyEBillingController::class, 'testConnection']);
+    Route::post('/billing/sync-audit-log/{id}', [EasyEBillingController::class, 'syncAuditLog']);
+    Route::post('/billing/sync-audit-bulk', [EasyEBillingController::class, 'syncAuditBulk']);
+    Route::get('/billing/customer-summary/{customerId}', [EasyEBillingController::class, 'getCustomerSummary']);
+    Route::get('/billing/customer-security-deposit/{customerId}', [EasyEBillingController::class, 'getCustomerSecurityDeposit']);
+    Route::get('/billing/search-live', [EasyEBillingController::class, 'searchLive']);
+    Route::post('/billing/sync-customer-direct', [EasyEBillingController::class, 'syncCustomerDirect']);
 });

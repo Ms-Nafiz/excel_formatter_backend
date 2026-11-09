@@ -31,4 +31,10 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    'easyebilling' => [
+        'url' => env('EASYE_BILLING_URL', 'https://catv.easyebilling.com'),
+        'email' => env('EASYE_BILLING_EMAIL'),
+        'password' => env('EASYE_BILLING_PASSWORD'),
+    ],
+
 ];

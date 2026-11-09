@@ -21,6 +21,14 @@ class CustomerRecordHistory extends Model
         'old_value',
         'new_value',
         'edited_by',
+        'billing_sync_status',
+        'billing_sync_error',
+        'billing_synced_at',
+        'billing_pk',
+    ];
+
+    protected $casts = [
+        'billing_synced_at' => 'datetime',
     ];
 
     public function customerMonthlyBilling(): BelongsTo

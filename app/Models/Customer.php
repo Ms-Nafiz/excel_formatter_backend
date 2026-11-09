@@ -12,6 +12,7 @@ class Customer extends Model
 
     protected $fillable = [
         'customer_id',
+        'billing_pk',
         'full_name',
         'customer_type',
         'category',

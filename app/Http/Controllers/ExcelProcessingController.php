@@ -1000,6 +1000,12 @@ class ExcelProcessingController extends Controller
             $query->where('field_name', $field);
         }
 
+        // Filter by EasyEBilling sync status (all | pending | synced | failed)
+        $syncStatus = $request->input('sync_status');
+        if (!empty($syncStatus) && $syncStatus !== 'all') {
+            $query->where('billing_sync_status', $syncStatus);
+        }
+
         // Search query filter
         if (!empty($search)) {
             $query->where(function ($q) use ($search) {
@@ -1061,6 +1067,15 @@ class ExcelProcessingController extends Controller
             ->take(5)
             ->get();
 
+        $syncCounts = (clone $query)->without(['customerRecord', 'processedFile'])
+            ->select('billing_sync_status', \DB::raw('count(*) as count'))
+            ->groupBy('billing_sync_status')
+            ->pluck('count', 'billing_sync_status')
+            ->toArray();
+        $pendingSync = (int)($syncCounts['pending'] ?? 0);
+        $syncedCount = (int)($syncCounts['synced'] ?? 0);
+        $failedSync = (int)($syncCounts['failed'] ?? 0);
+
         // Helper to attach edit counts and initial old value if latestOnly is active
         $attachEditStats = function ($items) use ($latestOnly) {
             if (!$latestOnly || empty($items)) {
@@ -1104,6 +1119,9 @@ class ExcelProcessingController extends Controller
                     'unique_customers' => $uniqueCustomers,
                     'top_fields' => $topFields,
                     'top_editors' => $topEditors,
+                    'pending_sync' => $pendingSync,
+                    'synced_count' => $syncedCount,
+                    'failed_sync' => $failedSync,
                 ],
             ], 200);
         }
@@ -1123,6 +1141,9 @@ class ExcelProcessingController extends Controller
                 'unique_customers' => $uniqueCustomers,
                 'top_fields' => $topFields,
                 'top_editors' => $topEditors,
+                'pending_sync' => $pendingSync,
+                'synced_count' => $syncedCount,
+                'failed_sync' => $failedSync,
             ],
         ], 200);
     }

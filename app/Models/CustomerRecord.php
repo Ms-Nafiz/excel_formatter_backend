@@ -26,6 +26,7 @@ class CustomerRecord extends Model
         'status',
         'full_name',
         'customer_id',
+        'billing_pk',
         'monthly_rent',
         'advance',
         'previous_dues',
